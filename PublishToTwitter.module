@@ -1,0 +1,901 @@
+<?php 
+require 'TwitterOAuth/twitteroauth-autoloader.php';
+use Abraham\TwitterOAuth\TwitterOAuth;
+
+class PublishToTwitter extends WireData implements Module, ConfigurableModule {
+
+    /**
+     * Array with invalid pagestatuses which cannot be used to tweet
+     *
+     * @return array
+     */
+    static protected $invalidPageStatuses = array(
+        Page::statusUnpublished,
+        Page::statusSystem,
+        Page::statusTrash,
+    );
+
+    const TwitterURL = "https://twitter.com/statuses/";
+
+    /**
+     * getModuleInfo is a module required by all modules to tell ProcessWire about them
+     *
+     * @return array
+     *
+     */
+    public static function getModuleInfo() {
+
+        return array(
+            'title' => 'PublishToTwitter',
+            'version' => '081',
+            'summary' => 'Offers an option to publish a page to Twitter when the date for publishing is past/scheduled. A cron should be set with lazycron or "wget quiet no-cache -O - http://www.your-site.com > /dev/null" or at "https://www.easycron.com/".',
+            'href' => 'https://www.agrio.nl',
+            'singular' => true,
+            'autoload' => 'template=admin|cron-publish-to-twitter',
+            'icon' => 'twitter',
+            'requires' => array('ProcessWire<3.0.0'),
+        );
+    }
+
+    /**
+     * Set an array with fielddata for creation and checking before installation and uninstallation
+     *
+     * @return array
+     *
+     */
+    static protected $modulefields = array(
+        0 => array(
+            'name' => 'publish_to_twitter',
+            'type' => 'FieldtypeCheckbox',
+            'label' => 'Publish to Twitter',
+            'showIf' => "publish_to_twitter_tid=0",
+        ),
+        1 => array(
+            'name' => 'publish_to_twitter_tid',
+            'type' => 'FieldtypeText',
+            'initValue' => 0,
+            'label' => 'TweetID',
+            'description' => 'Automatically filled when Tweeted',
+            'collapsed' => Inputfield::collapsedBlank,
+        ),
+        2 => array(
+            'name' => 'publish_to_twitter_delete',
+            'type' => 'FieldtypeCheckbox',
+            'label' => 'Delete tweet',
+            'collapsed' => Inputfield::collapsedNo,
+            'showIf' => "publish_to_twitter_tid!=0",
+        )
+    );
+
+    public function __construct() {
+        // populate defaults, which will get replaced with actual
+        // configured values before the init/ready methods are called
+        // $this->setArray(self::$defaults);
+    }
+
+    /**
+     * Module install action
+     *
+     */
+    public function ___install() {
+        // Check that there are no required templates & fields already...
+        $this->checkInstall();
+
+        // create all module fields
+        foreach (self::$modulefields as $field_to_create) {
+            $field_creating = new Field();
+            $field_creating->type = wire('modules')->get($field_to_create['type']);
+            $field_creating->name = $field_to_create['name'];
+            $field_creating->label = $field_to_create['label'];
+            $field_creating->collapsed = (isset($field_to_create['collapsed'])) ? $field_to_create['collapsed'] : Inputfield::collapsedNo;
+            if (isset($field_to_create['showIf'])) $field_creating->showIf = $field_to_create['showIf'];
+            if (isset($field_to_create['initValue'])) $field_creating->initValue = $field_to_create['initValue'];
+            if (isset($field_to_create['description'])) $field_creating->description = $field_to_create['description'];
+            $field_creating->tags = "PublishToTwitter";
+            $field_creating->icon = "twitter";
+            $field_creating->size = 0;
+            $field_creating->save();
+        }
+    }
+
+    /**
+     * Module uninstall action
+     *
+     */
+    public function ___uninstall() {
+        $templates = wire('templates');
+        $fields = wire('fields');
+        $ptt = wire('modules')->get('PublishToTwitter');
+
+        // remove all module fields from fieldgroups connected to templates
+        if ($ptt->publish_to_twitter_templates && count($ptt->publish_to_twitter_templates)) {
+            foreach($ptt->publish_to_twitter_templates as $ptt_template) {
+                // get fieldgroup from template and remove modulefields
+                $template = $templates->get($ptt_template);
+                $fg = $template->fieldgroup;
+                foreach (self::$modulefields as $field_to_remove) {
+                    $f = $fields->get($field_to_remove['name']);
+                    if ($fg->hasfield($f)) $fg->remove($f);
+                    $fg->save();
+                }
+            }
+        }
+        // remove all module fields
+        foreach (self::$modulefields as $field_to_remove) {
+            $f = $fields->get($field_to_remove['name']);
+            if ($f && !$f->numFieldgroups()) $fields->delete($f);
+            elseif ($f) wire('session')->error("Could not remove field {$f->label}, please remove this field manually.");
+        }
+    }
+
+    public function ready() {
+        // well... ok
+    }
+
+    /**
+     * Returns true if module already installed
+     *
+     * @return bool
+     */
+    private function checkInstall() {
+        if (count(self::$modulefields)) {
+            foreach(self::$modulefields as $checkfield) {
+                if ($this->fields->get($checkfield['name']))
+                    throw new WireException("There is already a field installed called '{$checkfield['name']}'");
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Default configuration
+     * @return array fields
+     */
+    public static function getDefaultConfig() {
+        return array(
+            // Preset for general settings
+            'publish_to_twitter_consumerkey' => '',
+            'publish_to_twitter_consumersecret' => '',
+            'publish_to_twitter_accesstoken' => '',
+            'publish_to_twitter_accesstokensecret' => '',
+            'publish_to_twitter_templates' => '',
+            'publish_to_twitter_datefield' => '',
+            'publish_to_twitter_titlefield' => '',
+            'publish_to_twitter_websitetitle' => '',
+            'publish_to_twitter_maxcharacters' => 115, // left for text (140 - 24 - 1) // max_num_char - link_num_char - space_char
+            'publish_to_twitter_maxcharlink' => 24, // left for text (140 - 24 - 1) // max_num_char - link_num_char - space_char
+            'publish_to_twitter_imagefield' => '',
+            'publish_to_twitter_imagefieldlimit' => 1, // only one image can be tweeted
+            'publish_to_twitter_imagefielddimlimit' => 1024, // 1024px images shouldn't exceed this size (used for either sides)
+            'publish_to_twitter_imagefieldsizelimit' => 3145728, // 3MB - images shouldn't exceed this size when tweeted
+            'publish_to_twitter_bitlylogin' => '',
+            'publish_to_twitter_bitlyaccesstoken' => '',
+        );
+    }
+
+    /**
+     * Initialize the module
+     *
+     */
+    public function init() {
+        $this->addHookAfter('Pages::save', $this, 'checkPublishToTwitter');
+        $this->addHookBefore('ProcessPageEdit::execute', $this, 'getPublishToTwitterCSS');
+    }
+
+    /**
+     * Load CSS to hide the TweetID field
+     *
+     */
+    public function getPublishToTwitterCSS(){
+        $config = wire('config');
+        $config->styles->append($config->urls->siteModules . 'PublishToTwitter/PublishToTwitter.css');
+    }
+
+    /**
+     * Set required fields for use of this module
+     *
+     * @return InputfieldWrapper
+     */
+    public static function getModuleConfigInputfields(array $data) {
+        $modules = wire('modules');
+        $templates = wire('templates');
+        $fields = wire('fields');
+        $fieldgroups = wire('fieldgroups');
+        $ar_modulefieldnames = array();
+        foreach (self::$modulefields as $field_to_connect) {
+            $ar_modulefieldnames[] = $field_to_connect['name'];
+        }
+
+        foreach(self::getDefaultConfig() as $key => $value) {
+            if(!isset($data[$key])) $data[$key] = $value;
+        }
+
+        // Get default Twitter settings
+        $_ck = $data['publish_to_twitter_consumerkey'];
+        $_cs = $data['publish_to_twitter_consumersecret'];
+        $_at = $data['publish_to_twitter_accesstoken'];
+        $_as = $data['publish_to_twitter_accesstokensecret'];
+        $_tp = $data['publish_to_twitter_templates'];
+        $_df = $data['publish_to_twitter_datefield'];
+        $_tf = $data['publish_to_twitter_titlefield'];
+        $_wt = $data['publish_to_twitter_websitetitle'];
+        $_mc = $data['publish_to_twitter_maxcharacters'];
+        $_ml = $data['publish_to_twitter_maxcharlink'];
+        $_if = $data['publish_to_twitter_imagefield'];
+        $_il = $data['publish_to_twitter_imagefieldlimit'];
+        $_id = $data['publish_to_twitter_imagefielddimlimit'];
+        $_is = $data['publish_to_twitter_imagefieldsizelimit'];
+        $_bl = $data['publish_to_twitter_bitlylogin'];
+        $_ba = $data['publish_to_twitter_bitlyaccesstoken'];
+
+        // update/check data only after post
+        $wp = wire()->input->post;
+        if (wire('page')->template == 'admin' && count($wp) && !$wp->uninstall) {
+            $_ck = $wp->publish_to_twitter_consumerkey;
+            $_cs = $wp->publish_to_twitter_consumersecret;
+            $_at = $wp->publish_to_twitter_accesstoken;
+            $_as = $wp->publish_to_twitter_accesstokensecret;
+            $_tp = $wp->publish_to_twitter_templates;
+            $_df = $wp->publish_to_twitter_datefield;
+            $_tf = $wp->publish_to_twitter_titlefield;
+            $_wt = $wp->publish_to_twitter_websitetitle;
+            $_mc = $wp->publish_to_twitter_maxcharacters;
+            $_ml = $wp->publish_to_twitter_maxcharlink;
+            $_if = $wp->publish_to_twitter_imagefield;
+            $_il = $wp->publish_to_twitter_imagefieldlimit;
+            $_id = $wp->publish_to_twitter_imagefielddimlimit;
+            $_is = $wp->publish_to_twitter_imagefieldsizelimit;
+            $_bl = $wp->publish_to_twitter_bitlylogin;
+            $_ba = $wp->publish_to_twitter_bitlyaccesstoken;
+
+            if(isset($_ck) && isset($_cs) && isset($_at) && isset($_as)) {
+
+                // now we try to connect to Twitter with an OAuth connection and search for hashtag processwire
+                $query = array(
+                    "q" => '#processwire',
+                    "count" => "5",
+                    "result_type" => "recent",
+                    "include_entities" => "false",
+                );
+                $result = $modules->get('PublishToTwitter')->TwitterConnection('search', $_ck, $_cs, $_at, $_as, $query);
+                if ($result) {
+                    // check for errors
+                    if(isset($result->errors) && count($result->errors)) {
+                        foreach($result->errors as $error) {
+                            wire('pages')->error("Twitter response: $error->message (Error code: $error->code)");
+                        }
+                    } else {
+                        // successful connected
+                        wire('session')->message("Connection to Twitter was successful");
+                    }
+                }
+            }
+
+            // when the templatefield is filled, get all fieldgroups to skip them at removing
+            $skip_fgs = array();
+            if ($_tp && count($_tp)) {
+                foreach($_tp as $ptt_template) {
+                    // get fieldgroup from template and add modulefields
+                    $template = $templates->get($ptt_template);
+                    $fg = $template->fieldgroup;
+                    $skip_fgs[] = $fg->name;
+                }
+            }
+            foreach ($ar_modulefieldnames as $field_to_connect) {
+                $f = $fields->get($field_to_connect);
+                $fgs = $f->getFieldgroups();
+                if (count($fgs)) {
+                    foreach ($fgs as $fg) {
+                        if (!in_array($fg->name, $skip_fgs)) {
+                            wire('session')->message("Fieldgroup: '{$f->name}' removed");
+                            $fg->remove($f);
+                            $fg->save();
+                        }
+                    }
+                }
+            }
+            // when a template is selected, add the publish_to_twitter field to it
+            if ($_tp && count($_tp)) {
+                foreach($_tp as $ptt_template) {
+                    // get fieldgroup from template and add modulefields
+                    $template = $templates->get($ptt_template);
+                    $fg = $template->fieldgroup;
+                    foreach ($ar_modulefieldnames as $field_to_connect) {
+                        wire('session')->message("Field: '{$field_to_connect}' attached to fieldgroup '{$fg->name}'");
+                        $fg->add($fields->get($field_to_connect));
+                    }
+                    $fg->save();
+                }
+            }
+        }
+
+        // set and return all fields for this module
+        $inputfields = new InputfieldWrapper();
+
+        // Twitter settings:
+        // Twitter Consumer Key
+        $f = $modules->get('InputfieldText');
+        $f->attr('name', 'publish_to_twitter_consumerkey');
+        $f->label = __('Twitter Consumer Key');
+        $f->required = true;
+        $f->columnWidth = 50;
+        $f->attr('value', $_ck);
+        $f->placeholder = __('Get OAuth keys and tokens at https://apps.twitter.com/');
+        $f->notes = __('Note: will be verified when submitting module data.');
+        $f->collapsed = Inputfield::collapsedPopulated;
+        $inputfields->add($f);
+
+        // Twitter Consumer Secret
+        $f = $modules->get('InputfieldText');
+        $f->attr('name', 'publish_to_twitter_consumersecret');
+        $f->label = __('Twitter Consumer Secret');
+        $f->required = true;
+        $f->columnWidth = 50;
+        $f->attr('value', $_cs);
+        $f->placeholder = __('Get OAuth keys and tokens at https://apps.twitter.com/');
+        $f->notes = __('Note: will be verified when submitting module data.');
+        $f->collapsed = Inputfield::collapsedPopulated;
+        $inputfields->add($f);
+
+        // Twitter Access Token
+        $f = $modules->get('InputfieldText');
+        $f->attr('name', 'publish_to_twitter_accesstoken');
+        $f->label = __('Twitter Access Token');
+        $f->required = true;
+        $f->columnWidth = 50;
+        $f->attr('value', $_at);
+        $f->placeholder = __('Get OAuth keys and tokens at https://apps.twitter.com/');
+        $f->notes = __('Note: will be verified when submitting module data.');
+        $f->collapsed = Inputfield::collapsedPopulated;
+        $inputfields->add($f);
+
+        // Twitter Access Token Secret
+        $f = $modules->get('InputfieldText');
+        $f->attr('name', 'publish_to_twitter_accesstokensecret');
+        $f->label = __('Twitter Access Token Secret');
+        $f->required = true;
+        $f->columnWidth = 50;
+        $f->attr('value', $_as);
+        $f->placeholder = __('Get OAuth keys and tokens at https://apps.twitter.com/');
+        $f->notes = __('Note: will be verified when submitting module data.');
+        $f->collapsed = Inputfield::collapsedPopulated;
+        $inputfields->add($f);
+
+        // Other settings fields
+        // template(s) field to check for checkbox
+        $f = $modules->get('InputfieldAsmSelect');
+        $f->attr('name', 'publish_to_twitter_templates');
+        $f->label = __('Publish to Twitter templates');
+        $f->description = __('Pages using these templates can be tweeted.');
+        $f->notes = __('Warning: removing a template will also remove Twitterdata from pages which use this template.');
+        foreach ($templates->find("flags!=" . Template::flagSystem . ",sort=name") as $template) {
+            $f->addOption($template->id, $template->name);
+        }
+        $f->required = true;
+        $f->columnWidth = 50;
+        $f->attr('value', $_tp);
+        $inputfields->add($f);
+
+        // date field to check with current date
+        $f = $modules->get('InputfieldSelect');
+        $f->attr('name', 'publish_to_twitter_datefield');
+        $f->label = __('Datefield to check for publication');
+        $f->description = __('This field will be checked for immediate/future tweeting.');
+        foreach ($fields->find('sort=label,type=FieldtypeDatetime|FieldtypeText') as $field) {
+            if (!in_array($field->name, $ar_modulefieldnames)) $f->addOption($field->name, $field->label);
+        }
+        $f->required = true;
+        $f->columnWidth = 50;
+        $f->attr('value', $_df);
+        $inputfields->add($f);
+
+        // page title field
+        $f = $modules->get('InputfieldSelect');
+        $f->attr('name', 'publish_to_twitter_titlefield');
+        $f->label = __('Page title field');
+        $f->description = __('This field will be placed in front of the Tweet.');
+        $f->notes = __('Note: shortened when too long.');
+        foreach ($fields->find('sort=label,type=FieldtypePageTitle|FieldtypeText') as $field) {
+            if (!in_array($field->name, $ar_modulefieldnames)) $f->addOption($field->name, $field->label);
+        }
+        $f->required = true;
+        $f->columnWidth = 34;
+        $f->attr('value', $_tf);
+        $inputfields->add($f);
+
+        // website title
+        $f = $modules->get('InputfieldText');
+        $f->attr('name', 'publish_to_twitter_websitetitle');
+        $f->label = __('Title of website');
+        $f->description = __('Will be placed after page title.');
+        $f->notes = __('Note: only when enough space available.');
+        $f->columnWidth = 33;
+        $f->attr('value', $_wt);
+        $inputfields->add($f);
+
+        // page image field
+        $f = $modules->get('InputfieldSelect');
+        $f->attr('name', 'publish_to_twitter_imagefield');
+        $f->label = __('Page image(s) field');
+        $f->description = __('Image to post with the Tweet.');
+        $f->notes = __('Note: First image will be posted.');
+        foreach ($fields->find('sort=label,type=FieldtypeImage|FieldtypeCropImage') as $field) {
+            $f->addOption($field->name, $field->label);
+        }
+        $f->columnWidth = 33;
+        $f->attr('value', $_if);
+        $inputfields->add($f);
+        
+        // Bit.ly login
+        $f = $modules->get('InputfieldText');
+        $f->attr('name', 'publish_to_twitter_bitlylogin');
+        $f->label = __('Bit.ly Login');
+        $f->description = __('');
+        $f->notes = __('');
+        $f->columnWidth = 50;
+        $f->attr('value', $_bl);
+        $inputfields->add($f);
+        
+        // Bit.ly access token
+        $f = $modules->get('InputfieldText');
+        $f->attr('name', 'publish_to_twitter_bitlyaccesstoken');
+        $f->label = __('Bit.ly Access Token');
+        $f->description = __('');
+        $f->notes = __('');
+        $f->columnWidth = 50;
+        $f->attr('value', $_ba);
+        $inputfields->add($f);
+
+        // all hidden fields:
+        // number of characters available for text
+        $f = $modules->get('InputfieldHidden');
+        $f->attr('name', 'publish_to_twitter_maxcharacters');
+        $f->attr('value', $_mc);
+        $inputfields->add($f);
+        // number of characters per link in text
+        $f = $modules->get('InputfieldHidden');
+        $f->attr('name', 'publish_to_twitter_maxcharlink');
+        $f->attr('value', $_ml);
+        $inputfields->add($f);
+        // max number of images to tweet
+        $f = $modules->get('InputfieldHidden');
+        $f->attr('name', 'publish_to_twitter_imagefieldlimit');
+        $f->attr('value', $_il);
+        $inputfields->add($f);
+        // max dimension (longest size)
+        $f = $modules->get('InputfieldHidden');
+        $f->attr('name', 'publish_to_twitter_imagefielddimlimit');
+        $f->attr('value', $_id);
+        $inputfields->add($f);
+        // maximum filesize of image
+        $f = $modules->get('InputfieldHidden');
+        $f->attr('name', 'publish_to_twitter_imagefieldsizelimit');
+        $f->attr('value', $_is);
+        $inputfields->add($f);
+
+        return $inputfields;
+    }
+
+    /**
+     * Before Pages::save check if this page should be Tweeted
+     * @return void
+     */
+    public function checkPublishToTwitter ($event) {
+        $page = $event->arguments('page');
+
+        // don't try anything when not all required fields are set
+        $valid = $this->checkRequiredFields();
+        if ($valid) return $this->error($valid);
+
+        // check all module required variables
+        $ptt = $this->modules->get('PublishToTwitter');
+
+        // preset error and message arrays
+        $ptt_err_array = $ptt_msg_array = array();
+
+        // place module variables into easy to use ones
+        $_ck = $ptt->publish_to_twitter_consumerkey;
+        $_cs = $ptt->publish_to_twitter_consumersecret;
+        $_at = $ptt->publish_to_twitter_accesstoken;
+        $_as = $ptt->publish_to_twitter_accesstokensecret;
+        $_df = $ptt->publish_to_twitter_datefield;
+        $_tf = $ptt->publish_to_twitter_titlefield;
+        $_wt = $ptt->publish_to_twitter_websitetitle;
+        $_mc = $ptt->publish_to_twitter_maxcharacters;
+        $_ml = $ptt->publish_to_twitter_maxcharlink;
+        $_if = $ptt->publish_to_twitter_imagefield;
+        $_il = $ptt->publish_to_twitter_imagefieldlimit;
+
+        // check for filled in fields and post is done
+        if (wire()->input->post->id && $page->publish_to_twitter && !$page->publish_to_twitter_tid) {
+            // page is saved (preventing loop), and checkbox for Twitter publishing is set, but page has not been Tweeted before (no TweetID)
+            if (in_array($page->status, self::$invalidPageStatuses)) {
+                // page status is not 'Published'
+                if ($page->get($_df) && time() > $page->get($_df)) {
+                    // publicationdate is in the past
+                    $this->message("This page will ONLY be tweeted when status is set 'Published'.");
+                    return;
+                } else {
+                    // publicationdate is in the future
+                    $this->message("This page will NOT be tweeted until the status is set 'Published'.");
+                    return;
+                }
+            } elseif ($page->get($_df) && time() > $page->get($_df)) {
+                // publicationdate is in the past, tweet now
+                $ptt_msg_array[] = "Trying to tweet this page now...";
+            } else {
+                // publicationdate is in the future, tweet when cron will find it
+                $this->message("This page will be tweeted when the publicationdate is reached.");
+                return;
+            }
+
+            // try to tweet
+            $result = self::createTweet($page);
+            if ($result) {
+                // check for errors
+                if(isset($result->errors) && count($result->errors)) {
+                    foreach($result->errors as $error) {
+                        $ptt_err_array[] = "Twitter response: {$error->message} (Error code: {$error->code})";
+                    }
+                } else {
+                    $ptt_msg_array[] = sprintf("Tweeted this page - <a target='_blank' href='%s{$result->id}'>#{$result->id}</a> <i class='fa fa-external-link'></i>.", self::TwitterURL);
+                }
+            }
+        } elseif (wire()->input->post->id && wire()->input->post->publish_to_twitter && wire()->input->post->publish_to_twitter_tid) {
+            // this page is already tweeted
+            $ptt_err_array[] = sprintf("This page is already tweeted; see <a target='_blank' href='%s{$page->publish_to_twitter_tid}'>Tweet</a> <i class='fa fa-external-link'></i>.", self::TwitterURL);
+
+            // unset checkbox so this item wont be tweeted by cron
+            $page->publish_to_twitter = 0;
+            $page->save();
+        } elseif (wire()->input->post->id && $page->publish_to_twitter_tid && wire()->input->post->publish_to_twitter_delete) {
+            // try to delete a tweet by ID
+            $query = array(
+                "id" => $page->publish_to_twitter_tid,
+            );
+            $result = $ptt->TwitterConnection('delete', $_ck, $_cs, $_at, $_as, $query);
+
+            if ($result) {
+                // check for errors
+                if(isset($result->errors) && count($result->errors)) {
+                    foreach($result->errors as $error) {
+                        $ptt_err_array[] = "Twitter response: {$error->message} (Error code: {$error->code})";
+                        if ($error->code == 144) {
+                            // false tweetID, remove option to delete and tweetID
+                            $page->publish_to_twitter_tid = "";
+
+                            // unset checkbox so this item can be tweeted again
+                            $page->publish_to_twitter_delete = 0;
+
+                            $page->save();
+                            $ptt_err_array[] = "Unable to determine correct TweetID, removed user-input";
+                        }
+                    }
+                } else {
+                    // remove TweetID from page
+                    $page->publish_to_twitter_tid = "";
+
+                    // unset checkbox so this item can be tweeted again
+                    $page->publish_to_twitter_delete = 0;
+
+                    $page->save();
+                    $ptt_msg_array[] = "Successful removed this tweet.";
+                }
+            }
+        }
+
+        // show errors
+        foreach ($ptt_err_array as $ptt_err) {
+            $this->error($ptt_err, Notice::allowMarkup);
+        }
+
+        // show messages
+        foreach ($ptt_msg_array as $ptt_msg) {
+            $this->message($ptt_msg, Notice::allowMarkup);
+        }
+
+        return;
+    }
+
+    /**
+     * Checks for pages that need to be tweeted, tweets them and saves log in {logpath}/PublishToTwitterCron.txt
+     *
+     * return void
+     */
+    public function RunCronPublishToTwitter() {
+        $log = new FileLog(wire('config')->paths->logs . 'PublishToTwitterCron.txt');
+        $log->save("- Cron started");
+
+        // don't try anything when not all required fields are set
+        $valid = $this->checkRequiredFields();
+        if ($valid) return $this->error($valid);
+
+        // preset error and message array
+        $ptt_msg_array = $ptt_err_array = array();
+
+        // check all module required variables
+        if (!count($ptt_err_array)) {
+            $ptt = $this->modules->get('PublishToTwitter');
+
+            // place module variables into easy to use ones
+            $_tf = $ptt->publish_to_twitter_titlefield;
+            $_df = $ptt->publish_to_twitter_datefield;
+
+            //set default in case no datefield is selected
+            $page_df = strtotime('+10 minutes');
+
+            if ($_df) $page_df = wire('fields')->get($_df)->name;
+            $page_tf = $_tf;
+            // Select published pages with publish_to_twitter set to true and where publicationdate is past current time
+            $tweet_pages = wire("pages")->find(
+                "publish_to_twitter=1,".
+                "publish_to_twitter_tid='',".
+                "{$page_df}<=now,".
+                "status!=" . implode(",status!=", self::$invalidPageStatuses)
+            );
+            if (count($tweet_pages)) {
+                $ptt_msg_array[] = __(count($tweet_pages) . ' pages found - ' . date('Y-m-d H:i:s'));
+            	foreach($tweet_pages as $tp) {
+                    // try to tweet
+                    $result = self::createTweet($tp);
+                    if ($result) {
+                        // check for errors
+                        if(isset($result->errors) && count($result->errors)) {
+                            foreach($result->errors as $error) {
+                                $ptt_err_array[] = __("Twitter response: {$error->message} (Error code: {$error->code})");
+                            }
+                        } else {
+                            $ptt_msg_array[] = __(sprintf("Tweeted this page - {$tp->name} to %s{$result->id}", self::TwitterURL));
+                        }
+                    }
+            	}
+            } else {
+                $ptt_msg_array[] = __('No pages found.');
+            }
+        } else {
+            // not all required module fields are set
+            $ptt_err_array[] = __("This action cannot be executed, please fill in all required fields in the Publish To Twitter module page.");
+        }
+
+        // show errors
+        foreach ($ptt_err_array as $ptt_err) {
+            $log->save("- Error: " . $ptt_err);
+        }
+
+        // show messages
+        foreach ($ptt_msg_array as $ptt_msg) {
+            $log->save("- " . $ptt_msg);
+        }
+        return;
+    }
+    
+    /**
+     * Check required fields before executing function by module inputdata
+     *
+     * @return string|bool (errormessage or false)
+     */
+    public function checkRequiredFields() {
+        $ptt = wire('modules')->get('PublishToTwitter');
+        foreach ($ptt->data as $req_field => $val) {
+            switch ($req_field) {
+                case "publish_to_twitter_consumerkey":
+                case "publish_to_twitter_consumersecret":
+                case "publish_to_twitter_accesstoken":
+                case "publish_to_twitter_accesstokensecret":
+                case "publish_to_twitter_datefield":
+                case "publish_to_twitter_titlefield":
+                    // text
+                    if (empty($val)) return __("Not all required module fields are set, please validate.");
+                case "publish_to_twitter_templates":
+                    // array
+                    if (!count($val)) return __("Not all required module fields are set, please validate.");
+            }
+        }
+        return false;
+    }
+
+    /*
+     * Build and place a complete Tweet with page and module data
+     *
+     * @param object page
+     * @return object Twitter response
+     */
+    public function createTweet($p) {
+        $ptt = $this->modules->get('PublishToTwitter');
+        $_ck = $ptt->publish_to_twitter_consumerkey;
+        $_cs = $ptt->publish_to_twitter_consumersecret;
+        $_at = $ptt->publish_to_twitter_accesstoken;
+        $_as = $ptt->publish_to_twitter_accesstokensecret;
+        $_tf = $ptt->publish_to_twitter_titlefield;
+        $_wt = $ptt->publish_to_twitter_websitetitle;
+        $_mc = $ptt->publish_to_twitter_maxcharacters;
+        $_ml = $ptt->publish_to_twitter_maxcharlink;
+        $_if = $ptt->publish_to_twitter_imagefield;
+        $_il = $ptt->publish_to_twitter_imagefieldlimit;
+        $_id = $ptt->publish_to_twitter_imagefielddimlimit;
+        $query = array(
+            "status" => array(
+                "text" => $p->get($_tf),
+                "id" => $p->id,
+                "mc" => $_mc,
+                "ml" => $_ml,
+                "wt" => ((strlen($_wt)) ? " {$_wt}" : ""), 
+            )
+        );
+
+        // when there is media, append it to the twitter query
+        if ($_if && wire('fields')->get($_if) && $p->get($_if) && count($p->get($_if))) {
+            // imagefield found and filled
+            $media = "";
+            $_ic = 0;
+            foreach ($p->get($_if) as $image) {
+                // default image properties
+                $im_opts = array("upscaling" => false);
+
+                // resize the twitterimage, we don't want to spoil datatraffic
+                $_ti = ($image->width > $image->height) ? $image->size($_id, 0, $im_opts) : $image->size(0, $_id, $im_opts);
+
+                // images for Twitter should not exceed 3MB
+                if ($_ti->filesize > $_is) break;
+
+                // upload media to twitter and get an ID for in tweet
+                $media = (empty($media)) ? $_ti->filename : implode(",", array($media, $_ti->filename));
+                $_ic++;
+                if ($_ic >= $_il) break;
+            }
+            // append media to status as imploded string with separator "," (comma)
+            $query["media_ids"] = $media;
+        }
+
+        // try to tweet
+        $result = $ptt->TwitterConnection("post", $_ck, $_cs, $_at, $_as, $query);
+
+        // when all ok, update page
+        if ($result && (!isset($result->errors) || !count($result->errors))) {
+            // set outputformatting for correct saving
+            $p->setOutputFormatting(false);
+
+            // save TweetID to page
+            $p->publish_to_twitter_tid = $result->id;
+
+            // unset checkbox so this item wont be tweeted by cron
+            $p->publish_to_twitter = 0;
+
+            $p->save();
+        }
+
+        // return complete result for response to user/cron
+        return $result;
+    }
+
+    /**
+     * Load Twitter OAuth and call function
+     * @param $_f string method to use when talking to Twitter
+     * @param $_ck string Twitter credential
+     * @param $_cs string Twitter credential
+     * @param $_at string Twitter credential
+     * @param $_as string Twitter credential
+     * @param $query array Tweet data
+     *
+     * @return object|false Twitter response|false when non-supported method is used
+     */
+    public function ___TwitterConnection($f, $_ck, $_cs, $_at, $_as, $query) {
+        switch ($f) {
+            case 'search'   :
+                $toa = new TwitterOAuth($_ck, $_cs, $_at, $_as);
+                return $toa->get('search/tweets', $query);
+            case 'post'     :
+                // split array $query to look for media
+                $media = (!empty($query["media_ids"])) ? explode(",", $query["media_ids"]) : array();
+                $media_no = count($media);
+                // combine all texts and strip the number of characters which can be used (if needed)
+                $text = $query["status"]["text"] . $query["status"]["wt"];
+                if ((strlen($text) + ($media_no * $query["status"]["ml"])) > $query["status"]["mc"])
+                    // text with website title is exceeding limit (including optional media links) so limit text to only page title
+                    // Twitter reserves for all media only one time the number of characters for media (so no multiplication needed)
+                    $text = ($media_no) ? $this->wordLimiter($query["status"]["text"], ($query["status"]["mc"] - $query["status"]["ml"])) : $this->wordLimiter($query["status"]["text"], $query["status"]["mc"]);
+
+                // add link of page (calculated in max_characters==mc)
+                $text .= " " . $this->shortenBitLy(wire('pages')->get($query["status"]["id"])->httpUrl);
+                $post_query = array("status" => $text);
+
+                // add media link(s) when available
+                $media_str = "";
+                foreach ($media as $mediafile) {
+                    $response = $this->___TwitterConnection("upload", $_ck, $_cs, $_at, $_as, ["media" => $mediafile]);
+                    if(isset($response->media_id_string)) {
+                        $media_str = (empty($post_query["media_ids"])) ? $response->media_id_string : implode(",", array($post_query["media_ids"], $response->media_id_string));
+                    }
+                    $post_query["media_ids"] = $media_str;
+                }
+                $toa = new TwitterOAuth($_ck, $_cs, $_at, $_as);
+                return $toa->post('statuses/update', $post_query);
+            case 'delete'   :
+                $toa = new TwitterOAuth($_ck, $_cs, $_at, $_as);
+                return $toa->delete('statuses/destroy', $query);
+            case 'upload'   :
+                $toa = new TwitterOAuth($_ck, $_cs, $_at, $_as);
+                return $toa->upload('media/upload', $query);
+        }
+        return false;
+    }
+
+    /**
+     * Get bit.ly shortened link or when error return given url
+     *
+     * @param $url string URL to shorten
+     * @return string shortened URL
+     */
+    public function shortenBitLy($url) {
+        $ptt = $this->modules->get('PublishToTwitter');
+        $_bl = $ptt->publish_to_twitter_bitlylogin;
+        $_ba = $ptt->publish_to_twitter_bitlyaccesstoken;
+        // return url
+        return (!empty($url) && !empty($_bl) && !empty($_ba)) ? $this->___BitLyConnection($url, $_bl, $_ba) : $url;
+    }
+
+    /**
+     * Make a CURL connection to the bit.ly API and try to get a shortened link or when error return given url
+     *
+     * @param $url string URL to shorten
+     * @param $login string bit.ly login name
+     * @param $accesstoken string bit.ly accesstoken
+     * @param $apiurl string url of bit.ly api
+     * @param $format string xml or json
+     * @param $version string api version
+     * @return string shortened URL
+     */
+    public function ___BitLyConnection($url, $login, $accesstoken, $apiurl = 'https://api-ssl.bitly.com/', $format='xml', $version='3') {
+        //create the URL
+        $bitly = $apiurl;
+        $bitly .= 'v'.$version.'/shorten';
+        $bitly .= '?longUrl='.urlencode($url);
+        $bitly .= '&login='.$login;
+        $bitly .= '&access_token='.$accesstoken;
+        $bitly .= '&format='.$format;
+
+        //get the url
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $bitly);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+        $response = curl_exec($ch);
+        curl_close($ch);
+
+        //parse depending on desired format
+        if(strtolower($format) == 'json') {
+            $json = @json_decode($response,true);
+            return (is_array($json) && isset($json['status_code']) && $json['status_code'] == '200' && isset($json['data']) && isset($json['data']['url'])) ? $json['data']['url'] : $url;
+        } else {
+            $xml = simplexml_load_string($response);
+            return (is_object($xml) && isset($xml->status_code) && $xml->status_code == '200' && isset($xml->data) && isset($xml->data->url)) ? $xml->data->url : $url;
+        }
+    }
+
+    /**
+     * Text alteration when given string is exceeding limit, appends suffix
+     *
+     * @param $str string Text to check
+     * @param $limit int number of characters
+     * @param $endstr string suffix after limited text if needed
+     * @return string formatted string
+     */
+    public function wordLimiter($str, $limit = 300, $endstr = '…') {
+        // strip all invalid characters
+        $str = strip_tags($str);
+
+        // check if we need limiting
+        if(strlen($str) <= $limit) return $str;
+
+        // limit text
+        $out = substr($str, 0, $limit);
+
+        // find last space in text to break there
+        $pos = strrpos($out, " ");
+        if ($pos>0) {
+            $out = substr($out, 0, $pos);
+        }
+
+        // return new text with suffix
+        return $out .= $endstr;
+    }
+}
