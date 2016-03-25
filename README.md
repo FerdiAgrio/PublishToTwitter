@@ -10,6 +10,7 @@ Uses (included) [TwitterOAuth PHP library](https://github.com/abraham/twitteroau
 To use the module combined with a cron, the following code can be used in a template.
 
 // when using LazyCron
+
 if ($this->cronInterval) {
     $this->addHook("LazyCron::{$this->cronInterval}", null, 'RunCronPublishToTwitter');
 } else {
@@ -22,5 +23,6 @@ if ($this->cronInterval) {
 
 
 // OR - for use in manual cron
+
 $ptt = wire("modules")->get("PublishToTwitter");
 $ptt->RunCronPublishToTwitter();
