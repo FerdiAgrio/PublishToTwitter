@@ -12,7 +12,7 @@
 
 <p>Optional you can select the field where the page image(s) are placed (only one will be tweeted).</p>
 
-<p>Optional you can fill out Bit.ly credentials for shortening URLs.</p>
+<p>Optional use of Bit.ly (needs credentials) to shorten the URL length in a more elegant way Twitter does.</p>
 
 <p>Includes instructions to set a cron (template or LazyCron), returns log in assets folder.</p>
 
@@ -39,3 +39,5 @@ if ($this->cronInterval) {
 
 $ptt = wire("modules")->get("PublishToTwitter");
 $ptt->RunCronPublishToTwitter();
+
+Check out the [Processwire modules section](http://modules.processwire.com/modules/publish-to-twitter/) for more details.

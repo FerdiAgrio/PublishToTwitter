@@ -1,7 +1,6 @@
 <?php
 /**
  * The most popular PHP library for use with the Twitter OAuth REST API.
- * 03-03-2016 Ferdi Derksen: changed function delete() using method 'DELETE' -> 'POST' due deprecated support from Twitter
  *
  * @license MIT
  */
@@ -203,7 +202,7 @@ class TwitterOAuth extends Config
      */
     public function delete($path, array $parameters = [])
     {
-        return $this->http('POST', self::API_HOST, $path, $parameters);
+        return $this->http('DELETE', self::API_HOST, $path, $parameters);
     }
 
     /**

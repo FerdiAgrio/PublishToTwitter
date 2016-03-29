@@ -27,9 +27,9 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
 
         return array(
             'title' => 'PublishToTwitter',
-            'version' => '081',
+            'version' => '082',
             'summary' => 'Offers an option to publish a page to Twitter when the date for publishing is past/scheduled. A cron should be set with lazycron or "wget quiet no-cache -O - http://www.your-site.com > /dev/null" or at "https://www.easycron.com/".',
-            'href' => 'https://www.agrio.nl',
+            'href' => 'https://github.com/FerdiAgrio/PublishToTwitter',
             'singular' => true,
             'autoload' => 'template=admin|cron-publish-to-twitter',
             'icon' => 'twitter',
@@ -84,7 +84,7 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
         // create all module fields
         foreach (self::$modulefields as $field_to_create) {
             $field_creating = new Field();
-            $field_creating->type = wire('modules')->get($field_to_create['type']);
+            $field_creating->type = $this->wire('modules')->get($field_to_create['type']);
             $field_creating->name = $field_to_create['name'];
             $field_creating->label = $field_to_create['label'];
             $field_creating->collapsed = (isset($field_to_create['collapsed'])) ? $field_to_create['collapsed'] : Inputfield::collapsedNo;
@@ -103,9 +103,9 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
      *
      */
     public function ___uninstall() {
-        $templates = wire('templates');
-        $fields = wire('fields');
-        $ptt = wire('modules')->get('PublishToTwitter');
+        $templates = $this->wire('templates');
+        $fields = $this->wire('fields');
+        $ptt = $this->wire('modules')->get('PublishToTwitter');
 
         // remove all module fields from fieldgroups connected to templates
         if ($ptt->publish_to_twitter_templates && count($ptt->publish_to_twitter_templates)) {
@@ -187,7 +187,7 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
      *
      */
     public function getPublishToTwitterCSS(){
-        $config = wire('config');
+        $config = $this->wire('config');
         $config->styles->append($config->urls->siteModules . 'PublishToTwitter/PublishToTwitter.css');
     }
 
@@ -248,7 +248,8 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
             $_bl = $wp->publish_to_twitter_bitlylogin;
             $_ba = $wp->publish_to_twitter_bitlyaccesstoken;
 
-            if(isset($_ck) && isset($_cs) && isset($_at) && isset($_as)) {
+            if(isset($_ck) && isset($_cs) && isset($_at) && isset($_as)
+                && !empty($_ck) && !empty($_cs) && !empty($_at) && !empty($_as)) {
 
                 // now we try to connect to Twitter with an OAuth connection and search for hashtag processwire
                 $query = array(
@@ -372,7 +373,7 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
             $f->addOption($template->id, $template->name);
         }
         $f->required = true;
-        $f->columnWidth = 50;
+        $f->columnWidth = 34;
         $f->attr('value', $_tp);
         $inputfields->add($f);
 
@@ -385,7 +386,7 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
             if (!in_array($field->name, $ar_modulefieldnames)) $f->addOption($field->name, $field->label);
         }
         $f->required = true;
-        $f->columnWidth = 50;
+        $f->columnWidth = 33;
         $f->attr('value', $_df);
         $inputfields->add($f);
 
@@ -399,7 +400,7 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
             if (!in_array($field->name, $ar_modulefieldnames)) $f->addOption($field->name, $field->label);
         }
         $f->required = true;
-        $f->columnWidth = 34;
+        $f->columnWidth = 33;
         $f->attr('value', $_tf);
         $inputfields->add($f);
 
@@ -407,9 +408,9 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
         $f = $modules->get('InputfieldText');
         $f->attr('name', 'publish_to_twitter_websitetitle');
         $f->label = __('Title of website');
-        $f->description = __('Will be placed after page title.');
+        $f->description = __('Will be placed after the page title.');
         $f->notes = __('Note: only when enough space available.');
-        $f->columnWidth = 33;
+        $f->columnWidth = 50;
         $f->attr('value', $_wt);
         $inputfields->add($f);
 
@@ -417,12 +418,12 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
         $f = $modules->get('InputfieldSelect');
         $f->attr('name', 'publish_to_twitter_imagefield');
         $f->label = __('Page image(s) field');
-        $f->description = __('Image to post with the Tweet.');
-        $f->notes = __('Note: First image will be posted.');
+        $f->description = __('Image to attach to the Tweet.');
+        $f->notes = __('Note: First image will be attached.');
         foreach ($fields->find('sort=label,type=FieldtypeImage|FieldtypeCropImage') as $field) {
             $f->addOption($field->name, $field->label);
         }
-        $f->columnWidth = 33;
+        $f->columnWidth = 50;
         $f->attr('value', $_if);
         $inputfields->add($f);
         
@@ -675,7 +676,7 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
      * @return string|bool (errormessage or false)
      */
     public function checkRequiredFields() {
-        $ptt = wire('modules')->get('PublishToTwitter');
+        $ptt = $this->wire('modules')->get('PublishToTwitter');
         foreach ($ptt->data as $req_field => $val) {
             switch ($req_field) {
                 case "publish_to_twitter_consumerkey":
@@ -713,6 +714,7 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
         $_if = $ptt->publish_to_twitter_imagefield;
         $_il = $ptt->publish_to_twitter_imagefieldlimit;
         $_id = $ptt->publish_to_twitter_imagefielddimlimit;
+        $_is = $ptt->publish_to_twitter_imagefieldsizelimit;
         $query = array(
             "status" => array(
                 "text" => $p->get($_tf),
@@ -812,7 +814,7 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
                 return $toa->post('statuses/update', $post_query);
             case 'delete'   :
                 $toa = new TwitterOAuth($_ck, $_cs, $_at, $_as);
-                return $toa->delete('statuses/destroy', $query);
+                return $toa->post('statuses/destroy', $query);
             case 'upload'   :
                 $toa = new TwitterOAuth($_ck, $_cs, $_at, $_as);
                 return $toa->upload('media/upload', $query);
