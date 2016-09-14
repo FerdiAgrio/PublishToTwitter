@@ -1,4 +1,5 @@
 <?php 
+namespace ProcessWire;
 require 'TwitterOAuth/twitteroauth-autoloader.php';
 use Abraham\TwitterOAuth\TwitterOAuth;
 
@@ -27,13 +28,13 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
 
         return array(
             'title' => 'PublishToTwitter',
-            'version' => '082',
+            'version' => '083',
             'summary' => 'Offers an option to publish a page to Twitter when the date for publishing is past/scheduled. A cron should be set with lazycron or "wget quiet no-cache -O - http://www.your-site.com > /dev/null" or at "https://www.easycron.com/".',
             'href' => 'https://github.com/FerdiAgrio/PublishToTwitter',
             'singular' => true,
             'autoload' => 'template=admin|cron-publish-to-twitter',
             'icon' => 'twitter',
-            'requires' => array('ProcessWire<3.0.0'),
+            'requires' => array('ProcessWire>=3.0.0'),
         );
     }
 

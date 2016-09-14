@@ -1,5 +1,5 @@
 # PublishToTwitter
-<span itemprop="name">Processwire 2.x module to Tweet pages</span>
+<span itemprop="name">Processwire 3.x module to Tweet pages</span>
 ------------
 
 <p itemprop="description">In short this module offers an option to publish a page to Twitter when the date for publishing is past/scheduled.</p>
