@@ -28,7 +28,7 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
 
         return array(
             'title' => 'PublishToTwitter',
-            'version' => '083',
+            'version' => '084',
             'summary' => 'Offers an option to publish a page to Twitter when the date for publishing is past/scheduled. A cron should be set with lazycron or "wget quiet no-cache -O - http://www.your-site.com > /dev/null" or at "https://www.easycron.com/".',
             'href' => 'https://github.com/FerdiAgrio/PublishToTwitter',
             'singular' => true,
@@ -540,7 +540,7 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
                         $ptt_err_array[] = "Twitter response: {$error->message} (Error code: {$error->code})";
                     }
                 } else {
-                    $ptt_msg_array[] = sprintf("Tweeted this page - <a target='_blank' href='%s{$result->id}'>#{$result->id}</a> <i class='fa fa-external-link'></i>.", self::TwitterURL);
+                    $ptt_msg_array[] = sprintf("Tweeted page - <a target='_blank' href='%s{$result->id}'>#{$result->id}</a> <i class='fa fa-external-link'></i>.", self::TwitterURL);
                 }
             }
         } elseif (wire()->input->post->id && wire()->input->post->publish_to_twitter && wire()->input->post->publish_to_twitter_tid) {
@@ -605,8 +605,8 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
      * return void
      */
     public function RunCronPublishToTwitter() {
-        $log = new FileLog(wire('config')->paths->logs . 'PublishToTwitterCron.txt');
-        $log->save("- Cron started");
+        $ptt_log_entries = array();
+        $ptt_log_entries[] = "Cron started";
 
         // don't try anything when not all required fields are set
         $valid = $this->checkRequiredFields();
@@ -636,7 +636,7 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
                 "status!=" . implode(",status!=", self::$invalidPageStatuses)
             );
             if (count($tweet_pages)) {
-                $ptt_msg_array[] = __(count($tweet_pages) . ' pages found - ' . date('Y-m-d H:i:s'));
+                $ptt_msg_array[] = __(count($tweet_pages) . ' page(s) found');
             	foreach($tweet_pages as $tp) {
                     // try to tweet
                     $result = self::createTweet($tp);
@@ -647,7 +647,7 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
                                 $ptt_err_array[] = __("Twitter response: {$error->message} (Error code: {$error->code})");
                             }
                         } else {
-                            $ptt_msg_array[] = __(sprintf("Tweeted this page - {$tp->name} to %s{$result->id}", self::TwitterURL));
+                            $ptt_msg_array[] = __(sprintf("Tweeted this page - {$tp->httpUrl} to %s{$result->id}", self::TwitterURL));
                         }
                     }
             	}
@@ -661,13 +661,15 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
 
         // show errors
         foreach ($ptt_err_array as $ptt_err) {
-            $log->save("- Error: " . $ptt_err);
+            $ptt_log_entries[] = "Error: " . $ptt_err;
         }
 
         // show messages
         foreach ($ptt_msg_array as $ptt_msg) {
-            $log->save("- " . $ptt_msg);
+            $ptt_log_entries[] = $ptt_msg;
         }
+
+        wire('log')->save("publishtotwitter", implode(" - ", $ptt_log_entries));
         return;
     }
     
