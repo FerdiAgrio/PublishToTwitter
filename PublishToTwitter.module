@@ -28,7 +28,7 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
 
         return array(
             'title' => 'PublishToTwitter',
-            'version' => '084',
+            'version' => '085',
             'summary' => 'Offers an option to publish a page to Twitter when the date for publishing is past/scheduled. A cron should be set with lazycron or "wget quiet no-cache -O - http://www.your-site.com > /dev/null" or at "https://www.easycron.com/".',
             'href' => 'https://github.com/FerdiAgrio/PublishToTwitter',
             'singular' => true,
@@ -166,7 +166,7 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
             'publish_to_twitter_maxcharacters' => 115, // left for text (140 - 24 - 1) // max_num_char - link_num_char - space_char
             'publish_to_twitter_maxcharlink' => 24, // left for text (140 - 24 - 1) // max_num_char - link_num_char - space_char
             'publish_to_twitter_imagefield' => '',
-            'publish_to_twitter_imagefieldlimit' => 1, // only one image can be tweeted
+            'publish_to_twitter_imagefieldlimit' => 3,
             'publish_to_twitter_imagefielddimlimit' => 1024, // 1024px images shouldn't exceed this size (used for either sides)
             'publish_to_twitter_imagefieldsizelimit' => 3145728, // 3MB - images shouldn't exceed this size when tweeted
             'publish_to_twitter_bitlylogin' => '',
@@ -420,12 +420,24 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
         $f->attr('name', 'publish_to_twitter_imagefield');
         $f->label = __('Page image(s) field');
         $f->description = __('Image to attach to the Tweet.');
-        $f->notes = __('Note: First image will be attached.');
+        $f->notes = __('Note: When multiple, the max. number will be attached.');
         foreach ($fields->find('sort=label,type=FieldtypeImage|FieldtypeCropImage') as $field) {
             $f->addOption($field->name, $field->label);
         }
-        $f->columnWidth = 50;
+        $f->columnWidth = 25;
         $f->attr('value', $_if);
+        $inputfields->add($f);
+        
+        // max number of images to tweet
+        $f = $modules->get('InputfieldInteger');
+        $f->attr('name', 'publish_to_twitter_imagefieldlimit');
+        $f->label = __('Number of images');
+        $f->description = __('Max. number of images to attach.');
+        $f->notes = __('Note: please mind the time to upload, max. 4');
+        $f->columnWidth = 25;
+        $f->attr('min', 1);
+        $f->attr('max', 4);
+        $f->attr('value', $_il);
         $inputfields->add($f);
         
         // Bit.ly login
@@ -458,11 +470,6 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
         $f = $modules->get('InputfieldHidden');
         $f->attr('name', 'publish_to_twitter_maxcharlink');
         $f->attr('value', $_ml);
-        $inputfields->add($f);
-        // max number of images to tweet
-        $f = $modules->get('InputfieldHidden');
-        $f->attr('name', 'publish_to_twitter_imagefieldlimit');
-        $f->attr('value', $_il);
         $inputfields->add($f);
         // max dimension (longest size)
         $f = $modules->get('InputfieldHidden');
@@ -795,10 +802,12 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
                 $media_no = count($media);
                 // combine all texts and strip the number of characters which can be used (if needed)
                 $text = $query["status"]["text"] . $query["status"]["wt"];
-                if ((strlen($text) + ($media_no * $query["status"]["ml"])) > $query["status"]["mc"])
+
+                if (strlen($text) > $query["status"]["mc"])
                     // text with website title is exceeding limit (including optional media links) so limit text to only page title
                     // Twitter reserves for all media only one time the number of characters for media (so no multiplication needed)
-                    $text = ($media_no) ? $this->wordLimiter($query["status"]["text"], ($query["status"]["mc"] - $query["status"]["ml"])) : $this->wordLimiter($query["status"]["text"], $query["status"]["mc"]);
+                    // since 09-2016 the media doesn't count anymore
+                    $text = $this->wordLimiter($query["status"]["text"], $query["status"]["mc"]);
 
                 // add link of page (calculated in max_characters==mc)
                 $text .= " " . $this->shortenBitLy(wire('pages')->get($query["status"]["id"])->httpUrl);
@@ -820,7 +829,7 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
                 return $toa->post('statuses/destroy', $query);
             case 'upload'   :
                 $toa = new TwitterOAuth($_ck, $_cs, $_at, $_as);
-                return $toa->upload('media/upload', $query);
+                return $toa->upload('media/upload', $query, true);
         }
         return false;
     }
