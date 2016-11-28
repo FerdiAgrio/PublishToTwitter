@@ -28,7 +28,7 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
 
         return array(
             'title' => 'PublishToTwitter',
-            'version' => '086',
+            'version' => '087',
             'summary' => 'Offers an option to publish a page to Twitter when the date for publishing is past/scheduled.',
             'href' => 'https://github.com/FerdiAgrio/PublishToTwitter',
             'singular' => true,
@@ -420,7 +420,7 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
         $f->label = __('Page image(s) field');
         $f->description = __('Image to attach to the Tweet.');
         $f->notes = __('Note: When multiple, the max. number will be attached.');
-        foreach ($fields->find('sort=label,type=FieldtypeImage|FieldtypeCropImage') as $field) {
+        foreach ($fields->find('sort=label,type=FieldtypeImage|FieldtypeCropImage|FieldtypeCroppableImage3') as $field) {
             $f->addOption($field->name, $field->label);
         }
         $f->columnWidth = 50;
