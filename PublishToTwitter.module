@@ -6,15 +6,11 @@ use Abraham\TwitterOAuth\TwitterOAuth;
 class PublishToTwitter extends WireData implements Module, ConfigurableModule {
 
     /**
-     * Array with invalid pagestatuses which cannot be used to tweet
+     * first page status from where pages cannot be tweeted
      *
-     * @return array
+     * @return page status
      */
-    static protected $invalidPageStatuses = array(
-        Page::statusUnpublished,
-        Page::statusSystem,
-        Page::statusTrash,
-    );
+    static protected $tweetFromStatus = Page::statusDraft;
 
     const TwitterURL = "https://twitter.com/statuses/";
 
@@ -28,7 +24,7 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
 
         return array(
             'title' => 'PublishToTwitter',
-            'version' => '087',
+            'version' => '089',
             'summary' => 'Offers an option to publish a page to Twitter when the date for publishing is past/scheduled.',
             'href' => 'https://github.com/FerdiAgrio/PublishToTwitter',
             'singular' => true,
@@ -532,6 +528,7 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
 
         // check all module required variables
         $ptt = $this->modules->get('PublishToTwitter');
+        if (!in_array($page->template->id, $ptt->publish_to_twitter_templates)) return;
 
         // preset error and message arrays
         $ptt_err_array = $ptt_msg_array = array();
@@ -555,7 +552,7 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
         // check for filled in fields and post is done
         if (wire()->input->post->id && $page->publish_to_twitter && !$page->publish_to_twitter_tid) {
             // page is saved (preventing loop), and checkbox for Twitter publishing is set, but page has not been Tweeted before (no TweetID)
-            if (in_array($page->status, self::$invalidPageStatuses)) {
+            if ($page->status >= self::$tweetFromStatus && !$page->parents('/trash/')) {
                 // page status is not 'Published'
                 if ($page->get($_df) && time() > $page->get($_df)) {
                     // publicationdate is in the past
@@ -677,7 +674,9 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
                 "publish_to_twitter=1,".
                 "publish_to_twitter_tid='',".
                 "{$page_df}<=now,".
-                "status!=" . implode(",status!=", self::$invalidPageStatuses)
+                "status<" . self::$tweetFromStatus . ",".
+                "has_parent!=/trash/,".
+                "template=". implode("|", $ptt->publish_to_twitter_templates)
             );
             if (count($tweet_pages)) {
                 $ptt_msg_array[] = __(count($tweet_pages) . ' page(s) found');
