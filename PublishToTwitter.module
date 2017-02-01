@@ -23,7 +23,7 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
 
         return array(
             'title' => 'PublishToTwitter',
-            'version' => '083',
+            'version' => '088',
             'summary' => 'Offers an option to publish a page to Twitter when the date for publishing is past/scheduled. A cron should be set with lazycron or "wget quiet no-cache -O - http://www.your-site.com > /dev/null" or at "https://www.easycron.com/".',
             'href' => 'https://github.com/FerdiAgrio/PublishToTwitter',
             'singular' => true,
