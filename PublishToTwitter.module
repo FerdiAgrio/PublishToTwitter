@@ -23,8 +23,8 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
     public static function getModuleInfo() {
 
         return array(
-            'title' => 'PublishToTwitter',
-            'version' => '089',
+            'title' => 'PublishToTwitter3',
+            'version' => '100',
             'summary' => 'Offers an option to publish a page to Twitter when the date for publishing is past/scheduled.',
             'href' => 'https://github.com/FerdiAgrio/PublishToTwitter',
             'singular' => true,
@@ -766,7 +766,7 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
         $_ps = $ptt->publish_to_twitter_pre_space;
         $query = array(
             "status" => array(
-                "text" => $p->get($_tf),
+                "text" => $p->getUnformatted($_tf),
                 "id" => $p->id,
                 "mc" => $_mc,
                 "ml" => $_ml,
