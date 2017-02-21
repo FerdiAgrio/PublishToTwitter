@@ -22,8 +22,8 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
     public static function getModuleInfo() {
 
         return array(
-            'title' => 'PublishToTwitter',
-            'version' => '088',
+            'title' => 'PublishToTwitter2',
+            'version' => '100',
             'summary' => 'Offers an option to publish a page to Twitter when the date for publishing is past/scheduled. A cron should be set with lazycron or "wget quiet no-cache -O - http://www.your-site.com > /dev/null" or at "https://www.easycron.com/".',
             'href' => 'https://github.com/FerdiAgrio/PublishToTwitter',
             'singular' => true,
@@ -716,7 +716,7 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
         $_is = $ptt->publish_to_twitter_imagefieldsizelimit;
         $query = array(
             "status" => array(
-                "text" => $p->get($_tf),
+                "text" => $p->getUnformatted($_tf),
                 "id" => $p->id,
                 "mc" => $_mc,
                 "ml" => $_ml,
