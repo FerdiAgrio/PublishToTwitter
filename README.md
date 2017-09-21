@@ -10,7 +10,7 @@
 
 <p>Optional you can fill out the name of the website which will be added after the title (in case space is available).</p>
 
-<p>Optional you can select the field where the page image(s) are placed (only one will be tweeted).</p>
+<p>Optional you can select the field where the page image(s) are placed (up to four can be tweeted, but mind the upload time).</p>
 
 <p>Optional use of Bit.ly (needs credentials) to shorten the URL length in a more elegant way Twitter does.</p>
 
