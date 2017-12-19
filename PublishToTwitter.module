@@ -24,7 +24,7 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
 
         return array(
             'title' => 'PublishToTwitter3',
-            'version' => '101',
+            'version' => '102',
             'summary' => 'Offers an option to publish a page to Twitter when the date for publishing is past/scheduled.',
             'href' => 'https://github.com/FerdiAgrio/PublishToTwitter/tree/master/',
             'singular' => true,
@@ -157,14 +157,13 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
             'publish_to_twitter_datefield' => '',
             'publish_to_twitter_titlefield' => '',
             'publish_to_twitter_websitetitle' => '',
-            'publish_to_twitter_maxcharacters' => 115, // left for text (140 - 24 - 1) // max_num_char - link_num_char - space_char
-            'publish_to_twitter_maxcharlink' => 24, // left for text (140 - 24 - 1) // max_num_char - link_num_char - space_char
+            'publish_to_twitter_maxcharacters' => 255, // left for text (280 - 24 - 1) // max_num_char - link_num_char - space_char
+            // maxcharlink; any link in the tweet will be shortened to 24 by Twitter WHEN TLD is valid
+            'publish_to_twitter_maxcharlink' => 24, // left for text (280 - 24 - 1) // max_num_char - link_num_char - space_char
             'publish_to_twitter_imagefield' => '',
             'publish_to_twitter_imagefieldlimit' => 3,
             'publish_to_twitter_imagefielddimlimit' => 1024, // 1024px images shouldn't exceed this size (used for either sides)
             'publish_to_twitter_imagefieldsizelimit' => 3145728, // 3MB - images shouldn't exceed this size when tweeted
-            'publish_to_twitter_bitlylogin' => '',
-            'publish_to_twitter_bitlyaccesstoken' => '',
             'publish_to_twitter_pre_prepend' => '',
             'publish_to_twitter_pre_templates' => '',
             'publish_to_twitter_pre_space' => '',
@@ -221,8 +220,6 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
         $_il = $data['publish_to_twitter_imagefieldlimit'];
         $_id = $data['publish_to_twitter_imagefielddimlimit'];
         $_is = $data['publish_to_twitter_imagefieldsizelimit'];
-        $_bl = $data['publish_to_twitter_bitlylogin'];
-        $_ba = $data['publish_to_twitter_bitlyaccesstoken'];
         $_pp = $data['publish_to_twitter_pre_prepend'];
         $_pt = $data['publish_to_twitter_pre_templates'];
         $_ps = $data['publish_to_twitter_pre_space'];
@@ -244,8 +241,6 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
             $_il = $wp->publish_to_twitter_imagefieldlimit;
             $_id = $wp->publish_to_twitter_imagefielddimlimit;
             $_is = $wp->publish_to_twitter_imagefieldsizelimit;
-            $_bl = $wp->publish_to_twitter_bitlylogin;
-            $_ba = $wp->publish_to_twitter_bitlyaccesstoken;
             $_pp = $wp->publish_to_twitter_pre_prepend;
             $_pt = $wp->publish_to_twitter_pre_templates;
             $_ps = $wp->publish_to_twitter_pre_space;
@@ -470,26 +465,6 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
         $f->columnWidth = 33;
         $f->checked = $_ps;
         $f->notes = __('Spaces are automatically stripped from the text. Activating this option will append one space.');
-        $inputfields->add($f);
-
-        // Bit.ly login
-        $f = $modules->get('InputfieldText');
-        $f->attr('name', 'publish_to_twitter_bitlylogin');
-        $f->label = __('Bit.ly Login');
-        $f->description = __('');
-        $f->notes = __('');
-        $f->columnWidth = 50;
-        $f->attr('value', $_bl);
-        $inputfields->add($f);
-
-        // Bit.ly access token
-        $f = $modules->get('InputfieldText');
-        $f->attr('name', 'publish_to_twitter_bitlyaccesstoken');
-        $f->label = __('Bit.ly Access Token');
-        $f->description = __('');
-        $f->notes = __('');
-        $f->columnWidth = 50;
-        $f->attr('value', $_ba);
         $inputfields->add($f);
 
         // all hidden fields:
@@ -865,7 +840,7 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
                     $text = $this->wordLimiter($query["status"]["text"], $query["status"]["mc"]);
 
                 // add link of page (calculated in max_characters==mc)
-                $text .= " " . $this->shortenBitLy(wire('pages')->get($query["status"]["id"])->httpUrl);
+                $text .= " " . wire('pages')->get($query["status"]["id"])->httpUrl;
                 $post_query = array("status" => $text);
 
                 // add media link(s) when available
@@ -887,57 +862,6 @@ class PublishToTwitter extends WireData implements Module, ConfigurableModule {
                 return $toa->upload('media/upload', $query, true);
         }
         return false;
-    }
-
-    /**
-     * Get bit.ly shortened link or when error return given url
-     *
-     * @param $url string URL to shorten
-     * @return string shortened URL
-     */
-    public function shortenBitLy($url) {
-        $ptt = $this->modules->get('PublishToTwitter');
-        $_bl = $ptt->publish_to_twitter_bitlylogin;
-        $_ba = $ptt->publish_to_twitter_bitlyaccesstoken;
-        // return url
-        return (!empty($url) && !empty($_bl) && !empty($_ba)) ? $this->___BitLyConnection($url, $_bl, $_ba) : $url;
-    }
-
-    /**
-     * Make a CURL connection to the bit.ly API and try to get a shortened link or when error return given url
-     *
-     * @param $url string URL to shorten
-     * @param $login string bit.ly login name
-     * @param $accesstoken string bit.ly accesstoken
-     * @param $apiurl string url of bit.ly api
-     * @param $format string xml or json
-     * @param $version string api version
-     * @return string shortened URL
-     */
-    public function ___BitLyConnection($url, $login, $accesstoken, $apiurl = 'https://api-ssl.bitly.com/', $format='xml', $version='3') {
-        //create the URL
-        $bitly = $apiurl;
-        $bitly .= 'v'.$version.'/shorten';
-        $bitly .= '?longUrl='.urlencode($url);
-        $bitly .= '&login='.$login;
-        $bitly .= '&access_token='.$accesstoken;
-        $bitly .= '&format='.$format;
-
-        //get the url
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $bitly);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-        $response = curl_exec($ch);
-        curl_close($ch);
-
-        //parse depending on desired format
-        if(strtolower($format) == 'json') {
-            $json = @json_decode($response,true);
-            return (is_array($json) && isset($json['status_code']) && $json['status_code'] == '200' && isset($json['data']) && isset($json['data']['url'])) ? $json['data']['url'] : $url;
-        } else {
-            $xml = simplexml_load_string($response);
-            return (is_object($xml) && isset($xml->status_code) && $xml->status_code == '200' && isset($xml->data) && isset($xml->data->url)) ? $xml->data->url : $url;
-        }
     }
 
     /**

@@ -12,7 +12,7 @@
 
 <p>Optional you can select the field where the page image(s) are placed (up to four can be tweeted, but mind the upload time).</p>
 
-<p>Optional use of Bit.ly (needs credentials) to shorten the URL length in a more elegant way Twitter does.</p>
+<p>v1.0.2 Removed use of Bit.ly</p>
 
 <p>Includes instructions to set a cron (template or LazyCron), returns log in assets folder.</p>
 
